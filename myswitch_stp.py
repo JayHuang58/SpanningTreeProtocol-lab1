@@ -1,8 +1,18 @@
 from switchyard.lib.userlib import *
 from SpanningTreeMessage import SpanningTreeMessage
 import time
-# from file import class_name
 
+# it is the spanning tree message packet
+# the source can be anything but the destination should be ff:ff:ff:ff:ff:ff to broadcast all ports
+def mk_stp_pkt(root_id, hops, switch_id, source="20:00:00:00:00:01", destination="ff:ff:ff:ff:ff:ff"):
+    spm = SpanningTreeMessage(root_id=root_id, hops_to_root=hops, switch_id=switch_id)
+    Ethernet.add_next_header_class(EtherType.SLOW, SpanningTreeMessage)
+    # spanning tree message packet construction, header and spm
+    pkt = Ethernet(src=source, dst=destination, ethertype=EtherType.SLOW) + spm
+    xbytes = pkt.to_bytes()
+    p = Packet(raw=xbytes)
+    print(p)
+    return p
 
 def main(net):
     my_interfaces = net.interfaces() # get itself interfaces/ports
@@ -122,15 +132,3 @@ def main(net):
     # shutdown net, but it is out of the while loop
     net.shutdown()
 
-
-# it is the spanning tree message packet
-# the source can be anything but the destination should be ff:ff:ff:ff:ff:ff to broadcast all ports
-def mk_stp_pkt(root_id, hops, switch_id, source="20:00:00:00:00:01", destination="ff:ff:ff:ff:ff:ff"):
-    spm = SpanningTreeMessage(root_id=root_id, hops_to_root=hops, switch_id=switch_id)
-    Ethernet.add_next_header_class(EtherType.SLOW, SpanningTreeMessage)
-    # spanning tree message packet construction, header and spm
-    pkt = Ethernet(src=source, dst=destination, ethertype=EtherType.SLOW) + spm
-    xbytes = pkt.to_bytes()
-    p = Packet(raw=xbytes)
-    print(p)
-    return p
