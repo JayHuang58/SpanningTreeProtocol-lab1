@@ -12,7 +12,6 @@ def mk_stp_pkt(root_id, hops, switch_id, source="20:00:00:00:00:01", destination
     pkt = Ethernet(src=source, dst=destination, ethertype=EtherType.SLOW) + spm
     xbytes = pkt.to_bytes()
     p = Packet(raw=xbytes)
-    print(p)
     return p
 
 
@@ -36,6 +35,7 @@ def main(net):
 
     # at the beginning, rootid == switchid
     stp_pkt = mk_stp_pkt(switchid, hops, switchid)
+    log_debug("Flooding packet {} ".format(stp_pkt))
     # flood the packet to all ports
     for intf in my_interfaces:
         net.send_packet(intf.name, stp_pkt)  # send packet by one of its ports
@@ -48,10 +48,12 @@ def main(net):
         except NoPackets:
             # if it is the root switch, it needs to send out stp packet to all non_block interfaces
             if switchid == root_switch_id:
-                new_stp_pkt = mk_stp_pkt(root_switch_id, 0, switchid)
-                last_stp_time = time.time()
                 for intf in non_block_interfaces:
+                    new_stp_pkt = mk_stp_pkt(root_switch_id, 0, switchid, intf.ethaddr)
+                    log_debug("Flooding packet {} ".format(new_stp_pkt))
                     net.send_packet(intf.name, new_stp_pkt)
+                # if it is the root switch, record the making time
+                last_stp_time = time.time()
             continue
         except Shutdown:
             return
@@ -59,12 +61,12 @@ def main(net):
         log_debug("In {} received packet {} on {}".format(net.name, packet, incoming_interface))
         # if it is the root switch and time period before last stp time is larger than 2 seconds
         if switchid == root_switch_id and time.time() - last_stp_time >= 2:
-            new_stp_pkt = mk_stp_pkt(root_switch_id, 0, switchid)
+            for intf in non_block_interfaces:
+                new_stp_pkt = mk_stp_pkt(root_switch_id, 0, switchid, intf.ethaddr)
+                log_debug("Flooding packet {} ".format(new_stp_pkt))
+                net.send_packet(intf.name, new_stp_pkt)
             # if it is the root switch, record the making time
             last_stp_time = time.time()
-            for intf in non_block_interfaces:
-                log_debug("Flooding packet {} to {}".format(packet, intf.name))
-                net.send_packet(intf.name, new_stp_pkt)
 
         # more than 10 seconds, it needs to reset all values
         if time.time() - last_stp_time >= 10:
@@ -85,21 +87,22 @@ def main(net):
                 root_switch_id = spm.root
 
                 hops = spm.hops_to_root+1
+                log_debug("incoming interface is: " + incoming_interface)
+
+                if spm.root < root_switch_id:
+                    non_block_interfaces = my_interfaces # reset all ports to unblock state
 
                 #TODO choose root interface is more complicate than it
                 root_interface = incoming_interface
 
-                # make new stp packet
-                new_stp_pkt = mk_stp_pkt(root_switch_id, hops, switchid)
-                # as long as it generates a new spm package, update time
-                last_stp_time = time.time()
-                if spm.root < root_switch_id:
-                    non_block_interfaces = my_interfaces # reset all ports to unblock state
                 # send out new spm packet except incoming interface
                 non_block_interfaces = list(filter(lambda x: x != incoming_interface, non_block_interfaces))
                 for intf in non_block_interfaces:
-                    log_debug("Flooding packet {} to {}".format(packet, intf.name))
+                    new_stp_pkt = mk_stp_pkt(root_switch_id, hops, switchid, intf.ethaddr)
+                    log_debug("Flooding packet {} ".format(new_stp_pkt))
                     net.send_packet(intf.name, new_stp_pkt)
+                # if it is the root switch, record the making time
+                last_stp_time = time.time()
 
             if spm.root == root_switch_id:
                 log_debug("check point 3")
@@ -108,13 +111,13 @@ def main(net):
                     non_block_interfaces = list(filter(lambda x: x != root_interface, non_block_interfaces))
                     root_interface = incoming_interface
                     # TODO update other information?
-                    # make new stp packet
-                    new_stp_pkt = mk_stp_pkt(root_switch_id, hops, switchid)
-                    # as long as it generates a new spm package, update time
-                    last_stp_time = time.time()
+
                     for intf in non_block_interfaces:
-                        log_debug("Flooding packet {} to {}".format(packet, intf.name))
+                        new_stp_pkt = mk_stp_pkt(root_switch_id, 0, switchid, intf.ethaddr)
+                        log_debug("Flooding packet {} ".format(new_stp_pkt))
                         net.send_packet(intf.name, new_stp_pkt)
+                    # if it is the root switch, record the making time
+                    last_stp_time = time.time()
                 else:
                     non_block_interfaces = list(filter(lambda x: x != incoming_interface, non_block_interfaces))
 
@@ -137,6 +140,5 @@ def main(net):
                     if incoming_interface != intf.name:
                         log_debug("Flooding packet {} to {}".format(packet, intf.name))
                         net.send_packet(intf.name, packet) # send packet by one of its ports
-
     # shutdown net, but it is out of the while loop
     net.shutdown()
