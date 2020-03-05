@@ -140,5 +140,3 @@ def main(net):
 
     # shutdown net, but it is out of the while loop
     net.shutdown()
-
-
