@@ -1,10 +1,41 @@
 from switchyard.lib.userlib import *
 from SpanningTreeMessage import SpanningTreeMessage
+from collections import OrderedDict
 import time
+
+
+class LRUCache:
+    def __init__(self):
+        self.capacity = 5
+        self.cache = OrderedDict()
+        self.port2addre = dict()
+
+    def get(self, ethaddr):
+        if ethaddr in self.cache:
+            port_name = self.cache.pop(ethaddr)
+            self.cache[ethaddr] = port_name
+            return port_name
+        else:
+            return None
+
+    def insert(self, ethaddr, port_name):
+        if port_name in self.port2addre:
+            old_addr = self.port2addre[port_name]
+            self.port2addre.pop(port_name)
+            self.cache.pop(old_addr)
+        self.port2addre[port_name] = ethaddr
+
+        if ethaddr in self.cache:
+            self.cache[ethaddr] = port_name
+        else:
+            if len(self.cache) >= self.capacity:
+                self.cache.popitem(last=False)
+            self.cache[ethaddr] = port_name
 
 
 class G:
     blocked_interfaces = set()
+    my_LRUCache = LRUCache()
 
 
 # it is the spanning tree message packet
@@ -98,10 +129,7 @@ def main(net):
                 log_debug("incoming interface is: " + incoming_interface)
 
                 if spm.root < root_switch_id:
-                    non_block_interfaces = my_interfaces # reset all ports to unblock state
-
-                for intf in non_block_interfaces:
-                    log_debug("all interfaces are {} ".format(intf.name))
+                    G.blocked_interfaces = set() # reset all ports to unblock state
 
                 root_interface = incoming_interface
 
@@ -114,34 +142,46 @@ def main(net):
                 log_debug("check point 3")
                 if spm.hops_to_root + 1 < hops or (spm.hops_to_root + 1 == hops and root_switch_id > spm.switch_id):
                     # removes the incoming_interface from the list of blocked interfaces( if present)
-                    if incoming_interface in G.blocked_interfaces:
-                        G.blocked_interfaces.remove(incoming_interface)
-
-                    root_interface = incoming_interface
-
-                    G.blocked_interfaces.add(root_interface)
-
+                    if incoming_interface not in G.blocked_interfaces:
+                        G.blocked_interfaces.add(incoming_interface)
                     send_stp(net, root_switch_id, spm.hops_to_root+1, switchid, my_interfaces)
                     # if it is the root switch, record the making time
                     last_stp_time = time.time()
+
+                    if incoming_interface in G.blocked_interfaces:
+                        log_debug("the incoming interface is "+ incoming_interface)
+                        G.blocked_interfaces.remove(incoming_interface)
+                    log_debug("this time the root interface: " + root_interface)
+                    G.blocked_interfaces.add(root_interface)
+                    root_interface = incoming_interface
                 else:
                     log_debug("need to remove incoming interface")
                     G.blocked_interfaces.remove(incoming_interface)
         else:
+            G.my_LRUCache.insert(packet[0].src, incoming_interface)
             # more than 10 sec it didn't receive any stp packet
             if reset:
+                log_debug("reset")
                 root_switch_id = switchid
                 hops = 0
                 G.blocked_interfaces = set()
             log_debug("check point 4")
+
+            dest_port = G.my_LRUCache.get(packet[0].dst)
             # the first part of packets records the destination info
             # the destination address is also an ethernet address
             if packet[0].dst in mymacs:
                 # the packet is for this switch
                 log_debug("Packet intended for me")
+            elif dest_port is not None:
+                # this destination has been found in table
+                net.send_packet(dest_port, packet)
             else:
                 # flood the packet to all ports except the input port
-                for intf in non_block_interfaces:
+                for intf in my_interfaces:
+                    log_debug("sending out interface: "+intf.name)
+                    if intf.name in G.blocked_interfaces:
+                        continue
                     if incoming_interface != intf.name:
                         log_debug("Flooding packet {} to {}".format(packet, intf.name))
                         net.send_packet(intf.name, packet)  # send packet by one of its ports
