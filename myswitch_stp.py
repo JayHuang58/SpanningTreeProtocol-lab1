@@ -3,6 +3,10 @@ from SpanningTreeMessage import SpanningTreeMessage
 import time
 
 
+class G:
+    blocked_interfaces = set()
+
+
 # it is the spanning tree message packet
 # the source can be anything but the destination should be ff:ff:ff:ff:ff:ff to broadcast all ports
 def mk_stp_pkt(root_id, hops, switch_id, source="20:00:00:00:00:01", destination="ff:ff:ff:ff:ff:ff"):
@@ -13,6 +17,19 @@ def mk_stp_pkt(root_id, hops, switch_id, source="20:00:00:00:00:01", destination
     xbytes = pkt.to_bytes()
     p = Packet(raw=xbytes)
     return p
+
+
+def send_stp(net, root_switch_id, hops, switchid, interfaces):
+    """
+    it will only send packets to non_block interfaces
+    """
+    # flood the packet to all non_block ports
+    for intf in interfaces:
+        if intf.name in G.blocked_interfaces:
+            continue
+        new_stp_pkt = mk_stp_pkt(root_switch_id, hops, switchid, intf.ethaddr)
+        log_debug("Flooding packet {} ".format(new_stp_pkt))
+        net.send_packet(intf.name, new_stp_pkt)  # send packet by one of its ports
 
 
 def main(net):
@@ -31,13 +48,9 @@ def main(net):
     root_switch_id = switchid
     # default hops is 0
     hops = 0
-    # records the time at which the last spanning tree message was received
 
-    # at the beginning, rootid == switchid
-    stp_pkt = mk_stp_pkt(switchid, hops, switchid)
     # flood the packet to all ports
-    for intf in my_interfaces:
-        net.send_packet(intf.name, stp_pkt)  # send packet by one of its ports
+    send_stp(net, root_switch_id, hops, switchid, my_interfaces)
 
     # continuing receiving packets, and records timestamp, input_port and packet info
     # need to distinguish packets, whether it is a normal packet or a spm packet
@@ -47,10 +60,8 @@ def main(net):
         except NoPackets:
             # if it is the root switch, it needs to send out stp packet to all non_block interfaces
             if switchid == root_switch_id:
-                for intf in non_block_interfaces:
-                    new_stp_pkt = mk_stp_pkt(root_switch_id, 0, switchid, intf.ethaddr)
-                    log_debug("Flooding packet {} ".format(new_stp_pkt))
-                    net.send_packet(intf.name, new_stp_pkt)
+                G.blocked_interfaces = set()
+                send_stp(net, root_switch_id, hops, switchid, my_interfaces)
                 # if it is the root switch, record the making time
                 last_stp_time = time.time()
             continue
@@ -60,10 +71,8 @@ def main(net):
         log_debug("In {} received packet {} on {}".format(net.name, packet, incoming_interface))
         # if it is the root switch and time period before last stp time is larger than 2 seconds
         if switchid == root_switch_id and time.time() - last_stp_time >= 2:
-            for intf in non_block_interfaces:
-                new_stp_pkt = mk_stp_pkt(root_switch_id, 0, switchid, intf.ethaddr)
-                log_debug("Flooding packet {} ".format(new_stp_pkt))
-                net.send_packet(intf.name, new_stp_pkt)
+            G.blocked_interfaces = set()
+            send_stp(net, root_switch_id, hops, switchid, my_interfaces)
             # if it is the root switch, record the making time
             last_stp_time = time.time()
 
@@ -93,41 +102,37 @@ def main(net):
 
                 for intf in non_block_interfaces:
                     log_debug("all interfaces are {} ".format(intf.name))
+
                 root_interface = incoming_interface
 
-                for intf in non_block_interfaces:
-                    # send out new spm packet except incoming interface
-                    if intf.name == incoming_interface:
-                        continue
-                    new_stp_pkt = mk_stp_pkt(root_switch_id, hops, switchid, intf.ethaddr)
-                    log_debug("Flooding packet {} on {}".format(new_stp_pkt, intf.name))
-                    net.send_packet(intf.name, new_stp_pkt)
-                # if it is the root switch, record the making time
+                G.blocked_interfaces.add(incoming_interface)
+                send_stp(net, root_switch_id, hops, switchid, my_interfaces)
+                # point 8, also need to update time
                 last_stp_time = time.time()
 
             if spm.root == root_switch_id:
                 log_debug("check point 3")
                 if spm.hops_to_root + 1 < hops or (spm.hops_to_root + 1 == hops and root_switch_id > spm.switch_id):
-                    # TODO if incoming_interface not in non_block_interfaces.name:
+                    # removes the incoming_interface from the list of blocked interfaces( if present)
+                    if incoming_interface in G.blocked_interfaces:
+                        G.blocked_interfaces.remove(incoming_interface)
 
                     root_interface = incoming_interface
 
-                    for intf in non_block_interfaces:
-                        if intf.name == root_interface:
-                            continue
-                        new_stp_pkt = mk_stp_pkt(root_switch_id, spm.hops_to_root + 1, switchid, intf.ethaddr)
-                        log_debug("Flooding packet {} on {}".format(new_stp_pkt, intf.name))
-                        net.send_packet(intf.name, new_stp_pkt)
+                    G.blocked_interfaces.add(root_interface)
+
+                    send_stp(net, root_switch_id, spm.hops_to_root+1, switchid, my_interfaces)
                     # if it is the root switch, record the making time
                     last_stp_time = time.time()
                 else:
                     log_debug("need to remove incoming interface")
+                    G.blocked_interfaces.remove(incoming_interface)
         else:
             # more than 10 sec it didn't receive any stp packet
             if reset:
                 root_switch_id = switchid
                 hops = 0
-                non_block_interfaces = my_interfaces
+                G.blocked_interfaces = set()
             log_debug("check point 4")
             # the first part of packets records the destination info
             # the destination address is also an ethernet address
