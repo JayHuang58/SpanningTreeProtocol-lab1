@@ -63,6 +63,7 @@ def main(net):
             # if it is the root switch, record the making time
             last_stp_time = time.time()
             for intf in non_block_interfaces:
+                log_debug("Flooding packet {} to {}".format(packet, intf.name))
                 net.send_packet(intf.name, new_stp_pkt)
 
         # more than 10 seconds, it needs to reset all values
@@ -71,17 +72,19 @@ def main(net):
 
         packet_type = packet[Ethernet].ethertype
         if packet_type == EtherType.SLOW:
+            log_debug("check point 1")
             # it receives spm, don't need to reset
             reset = False
             # it is the spm packet
             spm = packet[SpanningTreeMessage]
             # if the packet knows a smaller switch id, vote it as the root switch id
             # if incoming_interface is same as root_interface
-            if spm.root() < root_switch_id or incoming_interface == root_interface:
+            if spm.root < root_switch_id or incoming_interface == root_interface:
+                log_debug("check point 2")
                 # select root switch
-                root_switch_id = spm.root()
+                root_switch_id = spm.root
 
-                hops = spm.hops_to_root()+1
+                hops = spm.hops_to_root+1
 
                 #TODO choose root interface is more complicate than it
                 root_interface = incoming_interface
@@ -90,15 +93,17 @@ def main(net):
                 new_stp_pkt = mk_stp_pkt(root_switch_id, hops, switchid)
                 # as long as it generates a new spm package, update time
                 last_stp_time = time.time()
-                if spm.root() < root_switch_id:
+                if spm.root < root_switch_id:
                     non_block_interfaces = my_interfaces # reset all ports to unblock state
                 # send out new spm packet except incoming interface
                 non_block_interfaces = list(filter(lambda x: x != incoming_interface, non_block_interfaces))
                 for intf in non_block_interfaces:
+                    log_debug("Flooding packet {} to {}".format(packet, intf.name))
                     net.send_packet(intf.name, new_stp_pkt)
 
-            if spm.root() == root_switch_id:
-                if spm.hops_to_root() + 1 < hops or (spm.hops_to_root() + 1 == hops and root_switch_id > spm.switch_id()):
+            if spm.root == root_switch_id:
+                log_debug("check point 3")
+                if spm.hops_to_root + 1 < hops or (spm.hops_to_root + 1 == hops and root_switch_id > spm.switch_id):
                     non_block_interfaces.append(incoming_interface)
                     non_block_interfaces = list(filter(lambda x: x != root_interface, non_block_interfaces))
                     root_interface = incoming_interface
@@ -108,6 +113,7 @@ def main(net):
                     # as long as it generates a new spm package, update time
                     last_stp_time = time.time()
                     for intf in non_block_interfaces:
+                        log_debug("Flooding packet {} to {}".format(packet, intf.name))
                         net.send_packet(intf.name, new_stp_pkt)
                 else:
                     non_block_interfaces = list(filter(lambda x: x != incoming_interface, non_block_interfaces))
@@ -118,6 +124,7 @@ def main(net):
                 root_switch_id = switchid
                 hops = 0
                 non_block_interfaces = my_interfaces
+            log_debug("check point 4")
             # the first part of packets records the destination info
             # the destination address is also an ethernet address
             if packet[0].dst in mymacs:
