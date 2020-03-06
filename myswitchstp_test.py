@@ -40,32 +40,32 @@ def hub_tests():
 
     #1. Verify STP packet is flooded out on all ports after initialization.
     stp_pkt = mk_stp_pkt('20:00:00:00:00:01', 0, '20:00:00:00:00:01')
-    s.expect(PacketOutputEvent("eth0", stp_pkt, "eth1", stp_pkt, "eth2", stp_pkt, wildcards=[(Ethernet, 'src')]), "Expecting STP packets")
+    s.expect(PacketOutputEvent("eth0", stp_pkt, "eth1", stp_pkt, "eth2", stp_pkt, wildcards=[(Ethernet, 'src')]), "1. Expecting STP packets")
 
     #2.3. Verify STP packet is flooded out on all ports after 2 seconds.
     s.expect(PacketInputTimeoutEvent(3), "Waiting 2 seconds")
-    s.expect(PacketOutputEvent("eth0", stp_pkt, "eth1", stp_pkt, "eth2", stp_pkt, wildcards=[(Ethernet, 'src')]), "Expecting STP packets")
+    s.expect(PacketOutputEvent("eth0", stp_pkt, "eth1", stp_pkt, "eth2", stp_pkt, wildcards=[(Ethernet, 'src')]), "2. Expecting STP packets")
 
     #4. Receive new STP packet with smaller root.
     stp_pkt = mk_stp_pkt('10:00:00:00:00:01', 2, '10:00:00:00:00:01', hwsrc="30:00:00:00:00:01", hwdst="ff:ff:ff:ff:ff:ff")
-    s.expect(PacketInputEvent("eth1", stp_pkt), "Expecting STP packets on eth1: action to be forwarded")
+    s.expect(PacketInputEvent("eth1", stp_pkt), "4. Expecting STP packets on eth1: action to be forwarded")
 
     #5. Verify updated STP packet is flooded out of all ports except input port
     stp_pkt = mk_stp_pkt('10:00:00:00:00:01', 3, '20:00:00:00:00:01', hwsrc="20:00:00:00:00:01", hwdst="ff:ff:ff:ff:ff:ff")
-    s.expect(PacketOutputEvent("eth0", stp_pkt, "eth2", stp_pkt, wildcards=[(Ethernet, 'src')]), "Expecting STP packets to be broadcasted")
+    s.expect(PacketOutputEvent("eth0", stp_pkt, "eth2", stp_pkt, wildcards=[(Ethernet, 'src')]), "5. Expecting STP packets to be broadcasted")
 
     #6. Receive new stp with same root and less hops (block eth1 in this case)
     stp_pkt = mk_stp_pkt('10:00:00:00:00:01', 0, '10:00:00:00:00:01', hwsrc="10:00:00:00:00:01", hwdst="ff:ff:ff:ff:ff:ff")
-    s.expect(PacketInputEvent("eth0", stp_pkt), "Expecting STP packets on eth0: action to be forwarded")
+    s.expect(PacketInputEvent("eth0", stp_pkt), "6. Expecting STP packets on eth0: action to be forwarded")
 
     #7. Verify updated STP packet is flooded out of all ports except input port
     stp_pkt = mk_stp_pkt('10:00:00:00:00:01', 1, '20:00:00:00:00:01',hwsrc="20:00:00:00:00:01", hwdst="ff:ff:ff:ff:ff:ff")
-    s.expect(PacketOutputEvent("eth1", stp_pkt, "eth2", stp_pkt, wildcards=[(Ethernet, 'src')]), "Expecting STP packets to be broadcasted")
+    s.expect(PacketOutputEvent("eth1", stp_pkt, "eth2", stp_pkt, wildcards=[(Ethernet, 'src')]), "7. Expecting STP packets to be broadcasted")
 
 
     #8. Receive new stp with bigger root
     stp_pkt = mk_stp_pkt('30:00:00:00:00:01', 0, '30:00:00:00:00:01', hwsrc="30:00:00:00:00:01", hwdst="ff:ff:ff:ff:ff:ff")
-    s.expect(PacketInputEvent("eth2", stp_pkt), "Expecting STP packets on eth2: action to be discarded")
+    s.expect(PacketInputEvent("eth2", stp_pkt), "8. Expecting STP packets on eth2: action to be discarded")
 
 
    # by the end of this port port eth1 should be blocked
@@ -75,9 +75,9 @@ def hub_tests():
     # 10., 9.  A normal packet with destination not learnt should be sent out of ports eth0
     reqpkt = mk_pkt("60:00:00:00:00:01", "70:00:00:00:00:01", '192.168.1.100', '172.16.42.2')
     s.expect(PacketInputEvent("eth0", reqpkt, display=Ethernet),
-             "An Ethernet frame from 60:00:00:00:00:00 to 70:00:00:00:00:01 should arrive on eth0")
+             "9. An Ethernet frame from 60:00:00:00:00:00 to 70:00:00:00:00:01 should arrive on eth0")
     s.expect(PacketOutputEvent("eth2", reqpkt, display=Ethernet),
-             "Ethernet frame destined for 70:00:00:00:00:01 should be flooded out eth2")
+             "10. Ethernet frame destined for 70:00:00:00:00:01 should be flooded out eth2")
 
     # 12, 11, A normal packet with destination  learnt should be sent out of ports eth1 only.
     reqpkt = mk_pkt("70:00:00:00:00:01", "60:00:00:00:00:01", '192.168.1.100', '172.16.42.2')
