@@ -88,7 +88,6 @@ def main(net):
     while True:
         try:
             timestamp, incoming_interface, packet = net.recv_packet(timeout=2)  # receive packets
-            log_debug("every incoming interface is "+ incoming_interface)
         except NoPackets:
             # if it is the root switch, it needs to send out stp packet to all non_block interfaces
             if switchid == root_switch_id:
@@ -116,6 +115,8 @@ def main(net):
             # default hops is 0
             hops = 0
             G.blocked_interfaces = set()
+            G.my_LRUCache = LRUCache()
+            incoming_interface = -1
 
         packet_type = packet[Ethernet].ethertype
         if packet_type == EtherType.SLOW:
@@ -129,7 +130,6 @@ def main(net):
                 log_debug("check point 2")
                 # select root switch
                 root_switch_id = spm.root
-
                 hops = spm.hops_to_root+1
                 log_debug("incoming interface is: " + incoming_interface)
 
@@ -150,14 +150,12 @@ def main(net):
             if spm.root == root_switch_id:
                 log_debug("check point 3")
                 if spm.hops_to_root + 1 < hops or (spm.hops_to_root + 1 == hops and root_switch_id > spm.switch_id):
-                    # removes the incoming_interface from the list of blocked interfaces( if present)
+                    # removes the incoming_interface from the list of blocked interfaces(if present)
                     if incoming_interface in G.blocked_interfaces:
                         log_debug("the orginal incoming interface is " + incoming_interface)
                         G.blocked_interfaces.remove(incoming_interface)
+                    # block original root interface
                     G.blocked_interfaces.add(root_interface)
-
-                    for intf in G.blocked_interfaces:
-                        log_debug("the blocked interfaces are {}".format(intf))
                     # update info
                     root_interface = incoming_interface
                     G.incoming = incoming_interface
@@ -181,12 +179,9 @@ def main(net):
                 # the packet is for this switch
                 log_debug("Packet intended for me")
             elif dest_port is not None:
-                log_debug("I escape")
                 # this destination has been found in table
                 net.send_packet(dest_port, packet)
             else:
-                for intf in G.blocked_interfaces:
-                    log_debug("the blocked interfaces are {}".format(intf))
                 # flood the packet to all ports except the input port
                 for intf in my_interfaces:
                     if intf.name in G.blocked_interfaces:
