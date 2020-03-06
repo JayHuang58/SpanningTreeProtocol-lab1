@@ -79,8 +79,6 @@ def main(net):
     root_switch_id = switchid
     # default hops is 0
     hops = 0
-    # default
-    original_incoming_interface = -1
 
     # flood the packet to all ports
     send_stp(net, root_switch_id, hops, switchid, my_interfaces)
@@ -153,27 +151,23 @@ def main(net):
                 log_debug("check point 3")
                 if spm.hops_to_root + 1 < hops or (spm.hops_to_root + 1 == hops and root_switch_id > spm.switch_id):
                     # removes the incoming_interface from the list of blocked interfaces( if present)
-                    if original_incoming_interface in G.blocked_interfaces:
+                    if incoming_interface in G.blocked_interfaces:
                         log_debug("the orginal incoming interface is " + incoming_interface)
                         G.blocked_interfaces.remove(incoming_interface)
                     G.blocked_interfaces.add(root_interface)
 
                     for intf in G.blocked_interfaces:
                         log_debug("the blocked interfaces are {}".format(intf))
-
+                    # update info
                     root_interface = incoming_interface
                     G.incoming = incoming_interface
                     root_switch_id = spm.switch_id
-
                     hops = spm.hops_to_root+1
+                    # send stp package
                     last_stp_time = time.time()
-                    # if incoming_interface not in G.blocked_interfaces:
-                    #     G.blocked_interfaces.add(incoming_interface)
                     send_stp(net, root_switch_id, hops, switchid, my_interfaces)
                     # if it is the root switch, record the making time
-                    G.blocked_interfaces.add(original_incoming_interface)
                 else:
-                    log_debug("need to block incoming interface"+incoming_interface)
                     G.blocked_interfaces.add(incoming_interface)
         else:
             G.my_LRUCache.insert(packet[0].src, incoming_interface)
